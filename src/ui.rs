@@ -5,7 +5,7 @@ use gtk::{
     glib, Application, ApplicationWindow, Box as GBox, Button, Dialog, Entry,
     FileChooserAction, FileChooserDialog, Label, Notebook, ResponseType,
     ScrolledWindow, TextView, TextBuffer, DropDown, StringList,
-    Orientation, Align, WrapMode,
+    Orientation, Align, WrapMode, Image,
 };
 use std::cell::RefCell;
 use std::fs::{self, OpenOptions};
@@ -40,6 +40,11 @@ pub fn build_ui(app: &Application) {
     topbar.set_margin_end(12);
     topbar.set_margin_top(8);
     topbar.set_margin_bottom(8);
+
+    // App icon from installed hicolor theme, fallback to named icon
+    let app_icon = Image::from_icon_name("pilcrow");
+    app_icon.set_pixel_size(32);
+    topbar.append(&app_icon);
 
     let btn_new = Button::with_label("＋ New Journal");
     let btn_open = Button::with_label("📂 Open Journal");
@@ -160,6 +165,46 @@ pub fn build_ui(app: &Application) {
         .build());
 
     notebook.append_page(&dec_vbox, Some(&Label::new(Some("🔓  Decrypt"))));
+
+    // ── Journal tab ───────────────────────────────────────────────────────────
+    let journal_vbox = GBox::new(Orientation::Vertical, 8);
+    journal_vbox.set_margin_start(12);
+    journal_vbox.set_margin_end(12);
+    journal_vbox.set_margin_top(8);
+    journal_vbox.set_margin_bottom(8);
+
+    let journal_btn_row = GBox::new(Orientation::Horizontal, 8);
+    let btn_decrypt_all = Button::with_label("🔓  Decrypt All Entries");
+    let btn_clear_journal = Button::with_label("Clear");
+    let journal_status = Label::new(Some(""));
+    journal_status.set_halign(Align::End);
+    journal_status.set_hexpand(true);
+    journal_btn_row.append(&btn_decrypt_all);
+    journal_btn_row.append(&btn_clear_journal);
+    journal_btn_row.append(&journal_status);
+    journal_vbox.append(&journal_btn_row);
+
+    let journal_scroll = ScrolledWindow::builder().vexpand(true).build();
+    let journal_buf = TextBuffer::new(None);
+    let journal_view = TextView::builder()
+        .buffer(&journal_buf)
+        .wrap_mode(WrapMode::Word)
+        .editable(false)
+        .top_margin(12)
+        .bottom_margin(12)
+        .left_margin(12)
+        .right_margin(12)
+        .build();
+    journal_scroll.set_child(Some(&journal_view));
+    journal_vbox.append(&journal_scroll);
+
+    journal_vbox.append(&Label::builder()
+        .label("Decrypted journal is held in memory only and wiped on clear or close.")
+        .halign(Align::Start)
+        .css_classes(["dim-label"])
+        .build());
+
+    notebook.append_page(&journal_vbox, Some(&Label::new(Some("📖  Journal"))));
 
     root.append(&notebook);
     window.set_child(Some(&root));
@@ -421,7 +466,106 @@ pub fn build_ui(app: &Application) {
         });
     }
 
-    // ── Clear decrypt ─────────────────────────────────────────────────────────
+    // ── Decrypt All ───────────────────────────────────────────────────────────
+    {
+        let state = state.clone();
+        let journal_buf = journal_buf.clone();
+        let journal_status = journal_status.clone();
+        let window = window.clone();
+
+        btn_decrypt_all.connect_clicked(move |_| {
+            let path = match state.borrow().path.clone() {
+                Some(p) => p,
+                None => {
+                    show_error(&window, "Please open a journal first.");
+                    return;
+                }
+            };
+
+            let contents = match fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(e) => {
+                    show_error(&window, &format!("Could not read journal:\n{e}"));
+                    return;
+                }
+            };
+
+            journal_status.set_label("Decrypting…");
+            journal_buf.set_text("");
+
+            // Parse entries: split on "# YYYY-MM-DDT" headings
+            let mut output = Zeroizing::new(String::new());
+            let mut current_heading = String::new();
+            let mut current_cipher = String::new();
+            let mut in_pgp = false;
+            let mut total = 0usize;
+            let mut failed = 0usize;
+
+            for line in contents.lines() {
+                if line.starts_with("# 20") {
+                    // flush previous entry
+                    if !current_cipher.is_empty() {
+                        total += 1;
+                        match gpg::decrypt(&current_cipher) {
+                            Ok(plain) => {
+                                output.push_str(&current_heading);
+                                output.push('\n');
+                                output.push_str(plain.as_str());
+                                output.push_str("\n---\n\n");
+                            }
+                            Err(_) => { failed += 1; }
+                        }
+                        current_cipher.clear();
+                        in_pgp = false;
+                    }
+                    current_heading = line.to_string();
+                } else if line.contains("-----BEGIN PGP MESSAGE-----") {
+                    in_pgp = true;
+                    current_cipher.push_str(line);
+                    current_cipher.push('\n');
+                } else if in_pgp {
+                    current_cipher.push_str(line);
+                    current_cipher.push('\n');
+                    if line.contains("-----END PGP MESSAGE-----") {
+                        in_pgp = false;
+                    }
+                }
+            }
+            // flush last entry
+            if !current_cipher.is_empty() {
+                total += 1;
+                match gpg::decrypt(&current_cipher) {
+                    Ok(plain) => {
+                        output.push_str(&current_heading);
+                        output.push('\n');
+                        output.push_str(plain.as_str());
+                        output.push_str("\n---\n\n");
+                    }
+                    Err(_) => { failed += 1; }
+                }
+            }
+
+            journal_buf.set_text(output.as_str());
+
+            let msg = if failed == 0 {
+                format!("✅  {} entries decrypted", total)
+            } else {
+                format!("⚠  {} decrypted, {} failed", total - failed, failed)
+            };
+            journal_status.set_label(&msg);
+            // output (Zeroizing) is dropped and zeroed here
+        });
+    }
+
+    // ── Clear journal view ────────────────────────────────────────────────────
+    {
+        let journal_buf = journal_buf.clone();
+        let journal_status = journal_status.clone();
+        btn_clear_journal.connect_clicked(move |_| {
+            journal_buf.set_text("");
+            journal_status.set_label("");
+        });
+    }
     {
         let cipher_buf = cipher_buf.clone();
         let plain_buf = plain_buf.clone();
@@ -438,9 +582,11 @@ pub fn build_ui(app: &Application) {
     {
         let plain_buf = plain_buf.clone();
         let write_buf = write_buf.clone();
+        let journal_buf = journal_buf.clone();
         window.connect_close_request(move |_| {
             plain_buf.set_text("");
             write_buf.set_text("");
+            journal_buf.set_text("");
             glib::Propagation::Proceed
         });
     }
