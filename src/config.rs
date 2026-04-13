@@ -10,12 +10,12 @@ pub struct Config {
 }
 
 fn config_path() -> PathBuf {
-    let mut p = dirs_next();
+    let mut p = home_dir();
     p.push(".pilcrow_config.json");
     p
 }
 
-fn dirs_next() -> PathBuf {
+fn home_dir() -> PathBuf {
     std::env::var("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."))

@@ -28,22 +28,27 @@ All other dependencies are handled automatically by the installer.
 
 ## Installation
 
+### Option A — pre-built binary (recommended)
+
+Download the latest release tarball from the [releases page](https://github.com/stockphrase/pilcrow/releases):
+
 ```bash
-git clone https://github.com/yourusername/pilcrow.git
-cd pilcrow
-chmod +x install.sh
-./install.sh
+tar -xzf pilcrow-v0.1.0-linux-x86_64.tar.gz
+cd pilcrow-release
+chmod +x install.sh && ./install.sh
 ```
 
-The installer will:
+Only `gnupg`, `libgtk-4-1`, and `librsvg2-bin` are required — no Rust toolchain needed.
 
-1. Install system packages (`gnupg`, `python3`, `python3-tk`, `python3-venv`, `librsvg2-bin`) via `apt` if any are missing
-2. Create a Python virtual environment at `~/.venvs/pgp_journal` and install `customtkinter` into it
-3. Install a launcher script at `/usr/local/bin/pgp_journal`
-4. Convert the SVG icon to PNG at all standard sizes and register it with your desktop environment
-5. Install a `.desktop` entry so the app appears in your application launcher
+### Option B — build from source
 
-After installing, search for **Pilcrow** in your app menu, or run `pilcrow` from a terminal.
+```bash
+git clone https://github.com/stockphrase/pilcrow.git
+cd pilcrow
+chmod +x install.sh && ./install.sh
+```
+
+The installer will set up the full Rust toolchain automatically if it isn't present.
 
 ---
 

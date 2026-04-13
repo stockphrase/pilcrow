@@ -2,16 +2,16 @@ use crate::{config, gpg};
 use chrono::Local;
 use gtk::prelude::*;
 use gtk::{
-    glib, Application, ApplicationWindow, Box as GBox, Button, Dialog, Entry,
-    FileChooserAction, FileChooserDialog, Label, Notebook, ResponseType,
-    ScrolledWindow, TextView, TextBuffer, DropDown, StringList,
-    Orientation, Align, WrapMode, Image,
+    glib, Application, ApplicationWindow, Box as GBox, Button,
+    Label, Notebook, ScrolledWindow, TextView, SearchBar, SearchEntry,
+    TextBuffer, DropDown, StringList, Orientation, Align, WrapMode,
+    Image, FileDialog, FileFilter, Window,
 };
+use gtk::gio;
 use std::cell::RefCell;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
 use zeroize::Zeroizing;
 
 #[derive(Default)]
@@ -27,11 +27,13 @@ pub fn build_ui(app: &Application) {
     // ── Window ────────────────────────────────────────────────────────────────
     let window = ApplicationWindow::builder()
         .application(app)
-        .title("PGP Journal")
+        .title("Pilcrow")
         .default_width(860)
         .default_height(680)
+        .icon_name("pilcrow")
         .build();
 
+    // ── Root container ────────────────────────────────────────────────────────
     let root = GBox::new(Orientation::Vertical, 0);
 
     // ── Top bar ───────────────────────────────────────────────────────────────
@@ -41,7 +43,6 @@ pub fn build_ui(app: &Application) {
     topbar.set_margin_top(8);
     topbar.set_margin_bottom(8);
 
-    // App icon from installed hicolor theme, fallback to named icon
     let app_icon = Image::from_icon_name("pilcrow");
     app_icon.set_pixel_size(32);
     topbar.append(&app_icon);
@@ -78,18 +79,13 @@ pub fn build_ui(app: &Application) {
     meta_row.append(&entry_count_label);
     write_vbox.append(&meta_row);
 
-    let write_scroll = ScrolledWindow::builder()
-        .vexpand(true)
-        .build();
+    let write_scroll = ScrolledWindow::builder().vexpand(true).build();
     let write_buf = TextBuffer::new(None);
     let write_view = TextView::builder()
         .buffer(&write_buf)
         .wrap_mode(WrapMode::Word)
-        .top_margin(8)
-        .bottom_margin(8)
-        .left_margin(8)
-        .right_margin(8)
-        .monospace(false)
+        .top_margin(8).bottom_margin(8)
+        .left_margin(8).right_margin(8)
         .build();
     write_scroll.set_child(Some(&write_view));
     write_vbox.append(&write_scroll);
@@ -106,65 +102,7 @@ pub fn build_ui(app: &Application) {
 
     notebook.append_page(&write_vbox, Some(&Label::new(Some("✏  Write"))));
 
-    // ── Decrypt tab ───────────────────────────────────────────────────────────
-    let dec_vbox = GBox::new(Orientation::Vertical, 8);
-    dec_vbox.set_margin_start(12);
-    dec_vbox.set_margin_end(12);
-    dec_vbox.set_margin_top(8);
-    dec_vbox.set_margin_bottom(8);
 
-    dec_vbox.append(&Label::builder()
-        .label("Paste encrypted PGP block below:")
-        .halign(Align::Start)
-        .build());
-
-    let cipher_scroll = ScrolledWindow::builder().height_request(200).build();
-    let cipher_buf = TextBuffer::new(None);
-    let cipher_view = TextView::builder()
-        .buffer(&cipher_buf)
-        .wrap_mode(WrapMode::None)
-        .monospace(true)
-        .top_margin(6)
-        .left_margin(6)
-        .build();
-    cipher_scroll.set_child(Some(&cipher_view));
-    dec_vbox.append(&cipher_scroll);
-
-    let dec_btn_row = GBox::new(Orientation::Horizontal, 8);
-    let btn_decrypt = Button::with_label("🔓  Decrypt");
-    let btn_clear_dec = Button::with_label("Clear All");
-    let decrypt_status = Label::new(Some(""));
-    decrypt_status.set_halign(Align::End);
-    decrypt_status.set_hexpand(true);
-    dec_btn_row.append(&btn_decrypt);
-    dec_btn_row.append(&btn_clear_dec);
-    dec_btn_row.append(&decrypt_status);
-    dec_vbox.append(&dec_btn_row);
-
-    dec_vbox.append(&Label::builder()
-        .label("Decrypted text (never saved):")
-        .halign(Align::Start)
-        .build());
-
-    let plain_scroll = ScrolledWindow::builder().vexpand(true).build();
-    let plain_buf = TextBuffer::new(None);
-    let plain_view = TextView::builder()
-        .buffer(&plain_buf)
-        .wrap_mode(WrapMode::Word)
-        .editable(false)
-        .top_margin(8)
-        .left_margin(8)
-        .build();
-    plain_scroll.set_child(Some(&plain_view));
-    dec_vbox.append(&plain_scroll);
-
-    dec_vbox.append(&Label::builder()
-        .label("Plaintext is held in memory only and wiped on clear or close.")
-        .halign(Align::Start)
-        .css_classes(["dim-label"])
-        .build());
-
-    notebook.append_page(&dec_vbox, Some(&Label::new(Some("🔓  Decrypt"))));
 
     // ── Journal tab ───────────────────────────────────────────────────────────
     let journal_vbox = GBox::new(Orientation::Vertical, 8);
@@ -184,16 +122,31 @@ pub fn build_ui(app: &Application) {
     journal_btn_row.append(&journal_status);
     journal_vbox.append(&journal_btn_row);
 
+    // Search bar (shown/hidden with Ctrl+F)
+    let search_bar = SearchBar::new();
+    let search_entry = SearchEntry::new();
+    search_entry.set_hexpand(true);
+    let search_box = GBox::new(Orientation::Horizontal, 8);
+    let match_label = Label::new(Some(""));
+    match_label.set_halign(Align::End);
+    let btn_prev = Button::with_label("▲");
+    let btn_next = Button::with_label("▼");
+    search_box.append(&search_entry);
+    search_box.append(&btn_prev);
+    search_box.append(&btn_next);
+    search_box.append(&match_label);
+    search_bar.set_child(Some(&search_box));
+    search_bar.set_show_close_button(true);
+    journal_vbox.append(&search_bar);
+
     let journal_scroll = ScrolledWindow::builder().vexpand(true).build();
     let journal_buf = TextBuffer::new(None);
     let journal_view = TextView::builder()
         .buffer(&journal_buf)
         .wrap_mode(WrapMode::Word)
         .editable(false)
-        .top_margin(12)
-        .bottom_margin(12)
-        .left_margin(12)
-        .right_margin(12)
+        .top_margin(12).bottom_margin(12)
+        .left_margin(12).right_margin(12)
         .build();
     journal_scroll.set_child(Some(&journal_view));
     journal_vbox.append(&journal_scroll);
@@ -201,10 +154,28 @@ pub fn build_ui(app: &Application) {
     journal_vbox.append(&Label::builder()
         .label("Decrypted journal is held in memory only and wiped on clear or close.")
         .halign(Align::Start)
-        .css_classes(["dim-label"])
-        .build());
+        .css_classes(["dim-label"]).build());
 
-    notebook.append_page(&journal_vbox, Some(&Label::new(Some("📖  Journal"))));
+    notebook.append_page(&journal_vbox, Some(&Label::new(Some("🔓  Decrypt Journal"))));
+
+    // Wire Ctrl+F to toggle the search bar
+    let key_ctrl = gtk::EventControllerKey::new();
+    {
+        let search_bar = search_bar.clone();
+        let search_entry = search_entry.clone();
+        key_ctrl.connect_key_pressed(move |_, key, _, mods| {
+            if key == gtk::gdk::Key::f
+                && mods.contains(gtk::gdk::ModifierType::CONTROL_MASK)
+            {
+                let visible = !search_bar.is_search_mode();
+                search_bar.set_search_mode(visible);
+                if visible { search_entry.grab_focus(); }
+                return glib::Propagation::Stop;
+            }
+            glib::Propagation::Proceed
+        });
+    }
+    journal_view.add_controller(key_ctrl);
 
     root.append(&notebook);
     window.set_child(Some(&root));
@@ -242,16 +213,15 @@ pub fn build_ui(app: &Application) {
                 return;
             }
 
-            // File chooser
-            let fc = FileChooserDialog::builder()
+            let filter = FileFilter::new();
+            filter.add_pattern("*.md");
+            filter.set_name(Some("Markdown files"));
+
+            let fc = FileDialog::builder()
                 .title("Choose journal file location")
-                .transient_for(&window)
                 .modal(true)
-                .action(FileChooserAction::Save)
+                .default_filter(&filter)
                 .build();
-            fc.add_button("Cancel", ResponseType::Cancel);
-            fc.add_button("Next", ResponseType::Accept);
-            fc.set_current_name("journal.md");
 
             let keys_c = keys.clone();
             let state = state.clone();
@@ -259,41 +229,30 @@ pub fn build_ui(app: &Application) {
             let status_label = status_label.clone();
             let key_label = key_label.clone();
             let entry_count_label = entry_count_label.clone();
+            let win_ref: Option<&Window> = Some(window.upcast_ref());
+            let window2 = window.clone();
 
-            fc.connect_response(move |fc, resp| {
-                if resp != ResponseType::Accept {
-                    fc.close();
-                    return;
-                }
-                let path = match fc.file().and_then(|f| f.path()) {
-                    Some(p) => p,
-                    None => { fc.close(); return; }
-                };
-                let path_str = path.to_string_lossy().to_string();
-                let path_str = if path_str.ends_with(".md") {
-                    path_str
-                } else {
-                    format!("{}.md", path_str)
-                };
-                fc.close();
+            fc.save(win_ref, gio::Cancellable::NONE, move |res| {
+                let file = match res { Ok(f) => f, Err(_) => return };
+                let mut path_str = file.path()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                if !path_str.ends_with(".md") { path_str.push_str(".md"); }
 
-                // Key picker dialog
-                let chosen = pick_key_dialog(&window, &keys_c);
+                let chosen = pick_key_dialog(&window2, &keys_c);
                 if let Some(key) = chosen {
-                    // Create file if needed
                     if !std::path::Path::new(&path_str).exists() {
                         let header = format!(
-                            "# Journal\n\n_Encrypted with PGP key `{}` ({})_\n\n",
+                            "# Pilcrow Journal\n\n_Encrypted with PGP key `{}` ({})_\n\n",
                             key.key_id, key.uid
                         );
                         let _ = fs::write(&path_str, header);
                     }
-                    let cfg = config::Config {
+                    config::save(&config::Config {
                         last_journal: Some(path_str.clone()),
                         last_key_id: Some(key.key_id.clone()),
                         last_key_uid: Some(key.uid.clone()),
-                    };
-                    config::save(&cfg);
+                    });
                     let mut s = state.borrow_mut();
                     s.path = Some(path_str.clone());
                     s.key_id = Some(key.key_id.clone());
@@ -303,7 +262,6 @@ pub fn build_ui(app: &Application) {
                     refresh_count(&path_str, &entry_count_label);
                 }
             });
-            fc.show();
         });
     }
 
@@ -316,53 +274,48 @@ pub fn build_ui(app: &Application) {
         let entry_count_label = entry_count_label.clone();
 
         btn_open.connect_clicked(move |_| {
-            let fc = FileChooserDialog::builder()
+            let filter = FileFilter::new();
+            filter.add_pattern("*.md");
+            filter.set_name(Some("Markdown files"));
+
+            let fc = FileDialog::builder()
                 .title("Open Journal File")
-                .transient_for(&window)
                 .modal(true)
-                .action(FileChooserAction::Open)
+                .default_filter(&filter)
                 .build();
-            fc.add_button("Cancel", ResponseType::Cancel);
-            fc.add_button("Open", ResponseType::Accept);
 
             let state = state.clone();
             let window = window.clone();
             let status_label = status_label.clone();
             let key_label = key_label.clone();
             let entry_count_label = entry_count_label.clone();
+            let win_ref: Option<&Window> = Some(window.upcast_ref());
+            let window2 = window.clone();
 
-            fc.connect_response(move |fc, resp| {
-                if resp != ResponseType::Accept {
-                    fc.close();
-                    return;
-                }
-                let path = match fc.file().and_then(|f| f.path()) {
-                    Some(p) => p,
-                    None => { fc.close(); return; }
-                };
-                let path_str = path.to_string_lossy().to_string();
-                fc.close();
+            fc.open(win_ref, gio::Cancellable::NONE, move |res| {
+                let file = match res { Ok(f) => f, Err(_) => return };
+                let path_str = file.path()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default();
 
-                // Try to detect key from file header
                 let detected = detect_key_from_file(&path_str);
                 let key = if let Some(k) = detected {
                     Some(k)
                 } else {
                     let keys = gpg::list_public_keys();
                     if keys.is_empty() {
-                        show_error(&window, "No public keys found in your GPG keyring.");
+                        show_error(&window2, "No public keys found in your GPG keyring.");
                         return;
                     }
-                    pick_key_dialog(&window, &keys)
+                    pick_key_dialog(&window2, &keys)
                 };
 
                 if let Some(k) = key {
-                    let cfg = config::Config {
+                    config::save(&config::Config {
                         last_journal: Some(path_str.clone()),
                         last_key_id: Some(k.key_id.clone()),
                         last_key_uid: Some(k.uid.clone()),
-                    };
-                    config::save(&cfg);
+                    });
                     let mut s = state.borrow_mut();
                     s.path = Some(path_str.clone());
                     s.key_id = Some(k.key_id.clone());
@@ -372,16 +325,13 @@ pub fn build_ui(app: &Application) {
                     refresh_count(&path_str, &entry_count_label);
                 }
             });
-            fc.show();
         });
     }
 
     // ── Clear write box ───────────────────────────────────────────────────────
     {
         let write_buf = write_buf.clone();
-        btn_clear.connect_clicked(move |_| {
-            write_buf.set_text("");
-        });
+        btn_clear.connect_clicked(move |_| { write_buf.set_text(""); });
     }
 
     // ── Encrypt & Save ────────────────────────────────────────────────────────
@@ -396,22 +346,14 @@ pub fn build_ui(app: &Application) {
             let s = state.borrow();
             let (path, key_id) = match (&s.path, &s.key_id) {
                 (Some(p), Some(k)) => (p.clone(), k.clone()),
-                _ => {
-                    show_error(&window, "Please create or open a journal first.");
-                    return;
-                }
+                _ => { show_error(&window, "Please create or open a journal first."); return; }
             };
             drop(s);
 
             let (start, end) = (write_buf.start_iter(), write_buf.end_iter());
-            let text = write_buf.text(&start, &end, false).to_string();
-            let text = text.trim().to_string();
-            if text.is_empty() {
-                show_error(&window, "Nothing to save.");
-                return;
-            }
+            let text = write_buf.text(&start, &end, false).trim().to_string();
+            if text.is_empty() { show_error(&window, "Nothing to save."); return; }
 
-            // Encrypt synchronously (GPG is fast for small text)
             match gpg::encrypt(&text, &key_id) {
                 Ok(ciphertext) => {
                     let timestamp = Local::now().format("%Y-%m-%dT%H:%M").to_string();
@@ -437,35 +379,6 @@ pub fn build_ui(app: &Application) {
         });
     }
 
-    // ── Decrypt ───────────────────────────────────────────────────────────────
-    {
-        let cipher_buf = cipher_buf.clone();
-        let plain_buf = plain_buf.clone();
-        let decrypt_status = decrypt_status.clone();
-        let window = window.clone();
-
-        btn_decrypt.connect_clicked(move |_| {
-            let (start, end) = (cipher_buf.start_iter(), cipher_buf.end_iter());
-            let cipher_text = cipher_buf.text(&start, &end, false).to_string();
-            let cipher_text = cipher_text.trim().to_string();
-            if cipher_text.is_empty() { return; }
-
-            decrypt_status.set_label("Decrypting…");
-
-            match gpg::decrypt(&cipher_text) {
-                Ok(plaintext) => {
-                    plain_buf.set_text(&plaintext);
-                    // plaintext (Zeroizing<String>) is dropped and zeroed here
-                    decrypt_status.set_label("✅  Decrypted");
-                }
-                Err(e) => {
-                    decrypt_status.set_label("❌  Failed");
-                    show_error(&window, &format!("Decryption failed:\n{e}"));
-                }
-            }
-        });
-    }
-
     // ── Decrypt All ───────────────────────────────────────────────────────────
     {
         let state = state.clone();
@@ -476,24 +389,16 @@ pub fn build_ui(app: &Application) {
         btn_decrypt_all.connect_clicked(move |_| {
             let path = match state.borrow().path.clone() {
                 Some(p) => p,
-                None => {
-                    show_error(&window, "Please open a journal first.");
-                    return;
-                }
+                None => { show_error(&window, "Please open a journal first."); return; }
             };
-
             let contents = match fs::read_to_string(&path) {
                 Ok(c) => c,
-                Err(e) => {
-                    show_error(&window, &format!("Could not read journal:\n{e}"));
-                    return;
-                }
+                Err(e) => { show_error(&window, &format!("Could not read journal:\n{e}")); return; }
             };
 
             journal_status.set_label("Decrypting…");
             journal_buf.set_text("");
 
-            // Parse entries: split on "# YYYY-MM-DDT" headings
             let mut output = Zeroizing::new(String::new());
             let mut current_heading = String::new();
             let mut current_cipher = String::new();
@@ -501,23 +406,25 @@ pub fn build_ui(app: &Application) {
             let mut total = 0usize;
             let mut failed = 0usize;
 
+            let flush = |heading: &str, cipher: &str, output: &mut Zeroizing<String>, failed: &mut usize, total: &mut usize| {
+                if cipher.is_empty() { return; }
+                *total += 1;
+                match gpg::decrypt(cipher) {
+                    Ok(plain) => {
+                        output.push_str(heading);
+                        output.push('\n');
+                        output.push_str(plain.as_str());
+                        output.push_str("\n---\n\n");
+                    }
+                    Err(_) => { *failed += 1; }
+                }
+            };
+
             for line in contents.lines() {
                 if line.starts_with("# 20") {
-                    // flush previous entry
-                    if !current_cipher.is_empty() {
-                        total += 1;
-                        match gpg::decrypt(&current_cipher) {
-                            Ok(plain) => {
-                                output.push_str(&current_heading);
-                                output.push('\n');
-                                output.push_str(plain.as_str());
-                                output.push_str("\n---\n\n");
-                            }
-                            Err(_) => { failed += 1; }
-                        }
-                        current_cipher.clear();
-                        in_pgp = false;
-                    }
+                    flush(&current_heading, &current_cipher, &mut output, &mut failed, &mut total);
+                    current_cipher.clear();
+                    in_pgp = false;
                     current_heading = line.to_string();
                 } else if line.contains("-----BEGIN PGP MESSAGE-----") {
                     in_pgp = true;
@@ -526,72 +433,167 @@ pub fn build_ui(app: &Application) {
                 } else if in_pgp {
                     current_cipher.push_str(line);
                     current_cipher.push('\n');
-                    if line.contains("-----END PGP MESSAGE-----") {
-                        in_pgp = false;
-                    }
+                    if line.contains("-----END PGP MESSAGE-----") { in_pgp = false; }
                 }
             }
-            // flush last entry
-            if !current_cipher.is_empty() {
-                total += 1;
-                match gpg::decrypt(&current_cipher) {
-                    Ok(plain) => {
-                        output.push_str(&current_heading);
-                        output.push('\n');
-                        output.push_str(plain.as_str());
-                        output.push_str("\n---\n\n");
-                    }
-                    Err(_) => { failed += 1; }
-                }
-            }
+            flush(&current_heading, &current_cipher, &mut output, &mut failed, &mut total);
 
             journal_buf.set_text(output.as_str());
-
-            let msg = if failed == 0 {
+            journal_status.set_label(&if failed == 0 {
                 format!("✅  {} entries decrypted", total)
             } else {
                 format!("⚠  {} decrypted, {} failed", total - failed, failed)
-            };
-            journal_status.set_label(&msg);
-            // output (Zeroizing) is dropped and zeroed here
+            });
         });
     }
 
-    // ── Clear journal view ────────────────────────────────────────────────────
+    // ── Search ────────────────────────────────────────────────────────────────
+    // Shared match positions: list of (start_offset, end_offset)
+    let matches: Rc<RefCell<Vec<(i32, i32)>>> = Rc::new(RefCell::new(Vec::new()));
+    let current_match: Rc<RefCell<usize>> = Rc::new(RefCell::new(0));
+
+    // Create a highlight tag
+    let _highlight_tag = journal_buf.create_tag(
+        Some("search-highlight"),
+        &[("background", &"#f5c542"), ("foreground", &"#000000")],
+    );
+    let _current_tag = journal_buf.create_tag(
+        Some("search-current"),
+        &[("background", &"#e8650a"), ("foreground", &"#ffffff")],
+    );
+
+    let do_search = {
+        let journal_buf = journal_buf.clone();
+        let matches = matches.clone();
+        let current_match = current_match.clone();
+        let match_label = match_label.clone();
+        let journal_view = journal_view.clone();
+
+        move |query: &str| {
+            // Clear existing highlights
+            let start = journal_buf.start_iter();
+            let end = journal_buf.end_iter();
+            journal_buf.remove_tag_by_name("search-highlight", &start, &end);
+            journal_buf.remove_tag_by_name("search-current", &start, &end);
+
+            let mut found = Vec::new();
+            if !query.is_empty() {
+                let text = journal_buf.text(&start, &end, false).to_lowercase();
+                let q = query.to_lowercase();
+                let mut pos = 0usize;
+                while let Some(idx) = text[pos..].find(&q) {
+                    let abs = pos + idx;
+                    // byte offset to char offset
+                    let char_start = text[..abs].chars().count() as i32;
+                    let char_end = char_start + q.chars().count() as i32;
+                    found.push((char_start, char_end));
+                    pos = abs + q.len();
+                }
+                // Apply highlight tags
+                for &(s, e) in &found {
+                    let si = journal_buf.iter_at_offset(s);
+                    let ei = journal_buf.iter_at_offset(e);
+                    journal_buf.apply_tag_by_name("search-highlight", &si, &ei);
+                }
+            }
+
+            let total = found.len();
+            *matches.borrow_mut() = found;
+            *current_match.borrow_mut() = 0;
+
+            if total > 0 {
+                // Highlight first match as current
+                let m = matches.borrow();
+                let si = journal_buf.iter_at_offset(m[0].0);
+                let ei = journal_buf.iter_at_offset(m[0].1);
+                journal_buf.apply_tag_by_name("search-current", &si, &ei);
+                journal_view.scroll_to_iter(&mut journal_buf.iter_at_offset(m[0].0), 0.1, true, 0.0, 0.3);
+                match_label.set_label(&format!("1 / {}", total));
+            } else if !query.is_empty() {
+                match_label.set_label("no matches");
+            } else {
+                match_label.set_label("");
+            }
+        }
+    };
+
+    // Search entry changed
+    {
+        let do_search = do_search.clone();
+        search_entry.connect_search_changed(move |e| {
+            do_search(&e.text());
+        });
+    }
+
+    // Navigate to a specific match index
+    let navigate = {
+        let journal_buf = journal_buf.clone();
+        let matches = matches.clone();
+        let current_match = current_match.clone();
+        let match_label = match_label.clone();
+        let journal_view = journal_view.clone();
+
+        move |delta: i32| {
+            let m = matches.borrow();
+            if m.is_empty() { return; }
+            // Clear current highlight
+            let start = journal_buf.start_iter();
+            let end = journal_buf.end_iter();
+            journal_buf.remove_tag_by_name("search-current", &start, &end);
+
+            let total = m.len() as i32;
+            let cur = *current_match.borrow() as i32;
+            let next = ((cur + delta).rem_euclid(total)) as usize;
+            *current_match.borrow_mut() = next;
+
+            let si = journal_buf.iter_at_offset(m[next].0);
+            let ei = journal_buf.iter_at_offset(m[next].1);
+            journal_buf.apply_tag_by_name("search-current", &si, &ei);
+            journal_view.scroll_to_iter(&mut journal_buf.iter_at_offset(m[next].0), 0.1, true, 0.0, 0.3);
+            match_label.set_label(&format!("{} / {}", next + 1, total));
+        }
+    };
+
+    {
+        let navigate = navigate.clone();
+        btn_next.connect_clicked(move |_| navigate(1));
+    }
+    {
+        let navigate = navigate.clone();
+        btn_prev.connect_clicked(move |_| navigate(-1));
+    }
+
+    // Clear search highlights when journal is cleared
     {
         let journal_buf = journal_buf.clone();
         let journal_status = journal_status.clone();
+        let search_entry = search_entry.clone();
+        let search_bar = search_bar.clone();
+        let match_label_c = match_label.clone();
+        let do_search = do_search.clone();
         btn_clear_journal.connect_clicked(move |_| {
             journal_buf.set_text("");
             journal_status.set_label("");
-        });
-    }
-    {
-        let cipher_buf = cipher_buf.clone();
-        let plain_buf = plain_buf.clone();
-        let decrypt_status = decrypt_status.clone();
-
-        btn_clear_dec.connect_clicked(move |_| {
-            plain_buf.set_text("");
-            cipher_buf.set_text("");
-            decrypt_status.set_label("");
+            search_bar.set_search_mode(false);
+            search_entry.set_text("");
+            match_label_c.set_label("");
+            do_search("");
         });
     }
 
-    // ── Wipe plaintext on close ───────────────────────────────────────────────
+    // ── Wipe all plaintext on close and clear GPG agent cache ─────────────────
     {
-        let plain_buf = plain_buf.clone();
         let write_buf = write_buf.clone();
         let journal_buf = journal_buf.clone();
         window.connect_close_request(move |_| {
-            plain_buf.set_text("");
             write_buf.set_text("");
             journal_buf.set_text("");
+            gpg::clear_agent_cache();
             glib::Propagation::Proceed
         });
     }
 
-    window.show();
+    window.present();
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -605,17 +607,14 @@ fn basename(path: &str) -> String {
 
 fn refresh_count(path: &str, label: &Label) {
     if let Ok(contents) = fs::read_to_string(path) {
-        let count = contents.lines()
-            .filter(|l| l.starts_with("# 20"))
-            .count();
-        label.set_label(&format!("{} {}", count,
-            if count == 1 { "entry" } else { "entries" }));
+        let count = contents.lines().filter(|l| l.starts_with("# 20")).count();
+        label.set_label(&format!("{} {}", count, if count == 1 { "entry" } else { "entries" }));
     }
 }
 
 fn show_error(parent: &ApplicationWindow, msg: &str) {
     let d = gtk::AlertDialog::builder()
-        .message("PGP Journal")
+        .message("Pilcrow")
         .detail(msg)
         .modal(true)
         .build();
@@ -625,68 +624,72 @@ fn show_error(parent: &ApplicationWindow, msg: &str) {
 fn detect_key_from_file(path: &str) -> Option<gpg::KeyInfo> {
     let contents = fs::read_to_string(path).ok()?;
     let header: String = contents.chars().take(512).collect();
-    let re = regex_key_id(&header)?;
-    let keys = gpg::list_public_keys();
-    keys.into_iter().find(|k| k.key_id.ends_with(&re) || re.ends_with(&k.key_id))
+    let key_id = regex_key_id(&header)?;
+    gpg::list_public_keys().into_iter()
+        .find(|k| k.key_id.ends_with(&key_id) || key_id.ends_with(&k.key_id))
 }
 
 fn regex_key_id(text: &str) -> Option<String> {
-    // Find `key \`HEXID\`` pattern written by the journal header
     let marker = "key `";
     let start = text.find(marker)? + marker.len();
     let end = text[start..].find('`')? + start;
     Some(text[start..end].to_string())
 }
 
-/// Show a key-picker dialog and return the chosen KeyInfo.
 fn pick_key_dialog(parent: &ApplicationWindow, keys: &[gpg::KeyInfo]) -> Option<gpg::KeyInfo> {
     let labels: Vec<String> = keys.iter().map(|k| k.to_string()).collect();
     let string_list = StringList::new(&labels.iter().map(|s| s.as_str()).collect::<Vec<_>>());
 
-    let dialog = Dialog::builder()
-        .title("Select PGP Key")
-        .transient_for(parent)
-        .modal(true)
-        .build();
-    dialog.add_button("Cancel", ResponseType::Cancel);
-    dialog.add_button("Select", ResponseType::Accept);
-
-    let content = dialog.content_area();
-    content.set_spacing(12);
+    let content = GBox::new(Orientation::Vertical, 12);
     content.set_margin_start(16);
     content.set_margin_end(16);
     content.set_margin_top(16);
-    content.set_margin_bottom(8);
+    content.set_margin_bottom(16);
     content.append(&Label::builder()
         .label("Select the PGP key for this journal:")
-        .halign(Align::Start)
-        .build());
+        .halign(Align::Start).build());
 
     let dropdown = DropDown::new(Some(string_list), gtk::Expression::NONE);
     dropdown.set_selected(0);
     content.append(&dropdown);
 
-    let result = Rc::new(RefCell::new(None));
+    let btn_row = GBox::new(Orientation::Horizontal, 8);
+    btn_row.set_halign(Align::End);
+    let btn_cancel = Button::with_label("Cancel");
+    let btn_select = Button::with_label("Select");
+    btn_row.append(&btn_cancel);
+    btn_row.append(&btn_select);
+    content.append(&btn_row);
+
+    let dialog = gtk::Window::builder()
+        .title("Select PGP Key")
+        .transient_for(parent)
+        .modal(true)
+        .resizable(false)
+        .child(&content)
+        .build();
+
+    let result: Rc<RefCell<Option<gpg::KeyInfo>>> = Rc::new(RefCell::new(None));
     let result_c = result.clone();
     let keys_c = keys.to_vec();
+    let dialog_c = dialog.clone();
 
-    dialog.connect_response(move |d, resp| {
-        if resp == ResponseType::Accept {
-            let idx = dropdown.selected() as usize;
-            if idx < keys_c.len() {
-                *result_c.borrow_mut() = Some(keys_c[idx].clone());
-            }
+    btn_select.connect_clicked(move |_| {
+        let idx = dropdown.selected() as usize;
+        if idx < keys_c.len() {
+            *result_c.borrow_mut() = Some(keys_c[idx].clone());
         }
-        d.close();
+        dialog_c.close();
     });
 
-    dialog.show();
+    let dialog_c2 = dialog.clone();
+    btn_cancel.connect_clicked(move |_| { dialog_c2.close(); });
 
-    // Run a local main loop until the dialog closes
+    dialog.present();
+
     let ctx = glib::MainContext::default();
-    while dialog.is_visible() {
-        ctx.iteration(true);
-    }
+    while dialog.is_visible() { ctx.iteration(true); }
 
-    result.borrow().clone()
+    let r = result.borrow().clone();
+    r
 }

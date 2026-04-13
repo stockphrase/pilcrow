@@ -1,6 +1,6 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 #[derive(Clone)]
 pub struct KeyInfo {
@@ -63,6 +63,7 @@ pub fn encrypt(plaintext: &str, key_id: &str) -> Result<String, String> {
     let mut child = Command::new("gpg")
         .args([
             "--batch", "--yes", "--armor",
+            "--trust-model", "always",
             "--recipient", key_id,
             "--encrypt",
         ])
@@ -87,7 +88,13 @@ pub fn encrypt(plaintext: &str, key_id: &str) -> Result<String, String> {
     }
 }
 
-/// Decrypt ASCII-armored ciphertext.
+/// Clear all cached passphrases from the GPG agent.
+pub fn clear_agent_cache() {
+    let _ = std::process::Command::new("gpg-connect-agent")
+        .args(["reloadagent", "/bye"])
+        .output();
+}
+
 /// Returns plaintext wrapped in Zeroizing<String> so it is zeroed on drop.
 pub fn decrypt(ciphertext: &str) -> Result<Zeroizing<String>, String> {
     let mut child = Command::new("gpg")
@@ -108,7 +115,7 @@ pub fn decrypt(ciphertext: &str) -> Result<Zeroizing<String>, String> {
 
     if output.status.success() {
         // Collect into Zeroizing so the buffer is zeroed when dropped
-        let mut plain = Zeroizing::new(
+        let plain = Zeroizing::new(
             String::from_utf8(output.stdout)
                 .map_err(|e| format!("GPG output was not valid UTF-8: {e}"))?
         );
