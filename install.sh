@@ -1,14 +1,6 @@
 #!/usr/bin/env bash
-# Pilcrow — full installer (Rust edition)
-# Run from the directory containing Cargo.toml and src/
-#
-# What this does:
-#   1. Installs all system dependencies via apt
-#   2. Installs Rust via rustup if not present
-#   3. Builds the release binary with cargo
-#   4. Installs the binary to /usr/local/bin/pilcrow
-#   5. Converts the SVG icon and installs all sizes to hicolor icon theme
-#   6. Installs the .desktop file so the app appears in your app launcher
+# Pilcrow — installer
+# Installs from a pre-built binary if present, otherwise builds from source.
 #
 # Usage:
 #   chmod +x install.sh && ./install.sh
@@ -16,18 +8,22 @@
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "=== PGP Journal Installer ==="
+echo "=== Pilcrow Installer ==="
 echo ""
 
-# ── 1. System dependencies ────────────────────────────────────────────────────
-echo "[1/4] Installing system dependencies..."
+echo "[1/3] Installing system dependencies..."
 
 MISSING_PKGS=()
-command -v gpg          &>/dev/null || MISSING_PKGS+=(gnupg)
-command -v rsvg-convert &>/dev/null || command -v inkscape &>/dev/null || MISSING_PKGS+=(librsvg2-bin)
-pkg-config --exists gtk4 2>/dev/null || MISSING_PKGS+=(libgtk-4-dev)
-command -v pkg-config   &>/dev/null || MISSING_PKGS+=(pkg-config)
-command -v cc           &>/dev/null || MISSING_PKGS+=(build-essential)
+command -v gpg           &>/dev/null || MISSING_PKGS+=(gnupg)
+command -v rsvg-convert  &>/dev/null || command -v inkscape &>/dev/null || MISSING_PKGS+=(librsvg2-bin)
+
+if [ ! -f "$SCRIPT_DIR/pilcrow" ]; then
+  pkg-config --exists gtk4 2>/dev/null || MISSING_PKGS+=(libgtk-4-dev)
+  command -v pkg-config  &>/dev/null   || MISSING_PKGS+=(pkg-config)
+  command -v cc          &>/dev/null   || MISSING_PKGS+=(build-essential)
+else
+  dpkg -s libgtk-4-1 &>/dev/null 2>&1 || MISSING_PKGS+=(libgtk-4-1)
+fi
 
 if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
   echo "  Installing: ${MISSING_PKGS[*]}"
@@ -36,31 +32,27 @@ else
   echo "  ✓ All system dependencies present"
 fi
 
-# ── 2. Rust ───────────────────────────────────────────────────────────────────
-echo "[2/4] Checking Rust toolchain..."
+echo "[2/3] Installing binary..."
 
-if ! command -v cargo &>/dev/null; then
-  echo "  Rust not found — installing via rustup..."
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path
-  source "$HOME/.cargo/env"
-  echo "  ✓ Rust installed"
+if [ -f "$SCRIPT_DIR/pilcrow" ]; then
+  echo "  Using pre-built binary"
+  sudo install -m 755 "$SCRIPT_DIR/pilcrow" /usr/local/bin/pilcrow
 else
-  echo "  ✓ Rust present ($(rustc --version))"
+  echo "  No pre-built binary found — building from source..."
+  if ! command -v cargo &>/dev/null; then
+    echo "  Rust not found — installing via rustup..."
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path
+    source "$HOME/.cargo/env"
+  fi
+  export PATH="$HOME/.cargo/bin:$PATH"
+  cd "$SCRIPT_DIR"
+  cargo build --release
+  sudo install -m 755 "$SCRIPT_DIR/target/release/pilcrow" /usr/local/bin/pilcrow
 fi
 
-export PATH="$HOME/.cargo/bin:$PATH"
-
-# ── 3. Build ──────────────────────────────────────────────────────────────────
-echo "[3/4] Building release binary (this may take a minute on first build)..."
-cd "$SCRIPT_DIR"
-cargo build --release
-echo "  ✓ Build complete"
-
-# ── 4. Install binary + icons + desktop entry ─────────────────────────────────
-echo "[4/4] Installing..."
-
-sudo install -m 755 "$SCRIPT_DIR/target/release/pilcrow" /usr/local/bin/pilcrow
 echo "  ✓ Binary installed to /usr/local/bin/pilcrow"
+
+echo "[3/3] Installing icons and desktop entry..."
 
 SVG="$SCRIPT_DIR/assets/pilcrow.svg"
 ICON_DIR="$HOME/.local/share/icons/hicolor"
@@ -107,13 +99,12 @@ chmod 644 "$DESKTOP_DIR/pilcrow.desktop"
 update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
 echo "  ✓ Desktop entry installed"
 
-# ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
 echo "=== Installation complete ==="
 echo ""
 echo "You can now:"
-echo "  • Launch from your app menu (search 'PGP Journal')"
-echo "  • Run from terminal: pgp_journal"
+echo "  • Launch from your app menu (search 'Pilcrow')"
+echo "  • Run from terminal: pilcrow"
 echo ""
 echo "Note: you will need at least one GPG key pair in your keyring."
 echo "To generate one:  gpg --full-generate-key"
