@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Pilcrow — Encrypted Journal</title>
+  <style>
+    :root {
+      --orange: #bd4f0c;
+      --orange-light: #e8650a;
+      --orange-dark: #8a3808;
+      --cream: #f5f0e8;
+      --dark: #1a1a1a;
+      --mid: #3a3a3a;
+      --text: #2a2a2a;
+      --border: #ddd4c4;
+      --code-bg: #f0ebe0;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Georgia", serif;
+      background: var(--cream);
+      color: var(--text);
+      line-height: 1.75;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--dark);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 2rem;
+      height: 52px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+    }
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+    }
+    .nav-logo svg { width: 28px; height: 28px; }
+    .nav-logo span {
+      font-family: Georgia, serif;
+      font-size: 1.2rem;
+      color: var(--cream);
+      letter-spacing: 0.04em;
+    }
+    .nav-links { display: flex; gap: 1.8rem; }
+    .nav-links a {
+      color: #bbb;
+      text-decoration: none;
+      font-family: sans-serif;
+      font-size: 0.85rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--orange-light); }
+
+    /* ── HERO ── */
+    .hero {
+      background: var(--dark);
+      color: var(--cream);
+      text-align: center;
+      padding: 7rem 2rem 6rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: "¶";
+      position: absolute;
+      font-size: 42rem;
+      color: rgba(255,255,255,0.02);
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-family: Georgia, serif;
+      pointer-events: none;
+      line-height: 1;
+    }
+    .hero-icon {
+      width: 120px;
+      height: 120px;
+      margin: 0 auto 2rem;
+      filter: drop-shadow(0 8px 24px rgba(189,79,12,0.5));
+    }
+    .hero h1 {
+      font-size: 3.5rem;
+      letter-spacing: 0.08em;
+      font-weight: normal;
+      margin-bottom: 1rem;
+    }
+    .hero h1 span { color: var(--orange-light); }
+    .hero p {
+      font-size: 1.2rem;
+      color: #aaa;
+      max-width: 560px;
+      margin: 0 auto 2.5rem;
+      font-style: italic;
+    }
+    .hero-btns { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-block;
+      padding: 0.75rem 2rem;
+      border-radius: 4px;
+      text-decoration: none;
+      font-family: sans-serif;
+      font-size: 0.9rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: var(--orange);
+      color: #fff;
+      border: 2px solid var(--orange);
+    }
+    .btn-primary:hover { background: var(--orange-light); border-color: var(--orange-light); }
+    .btn-secondary {
+      background: transparent;
+      color: var(--cream);
+      border: 2px solid #555;
+    }
+    .btn-secondary:hover { border-color: var(--cream); }
+
+    /* ── FEATURES ── */
+    .features {
+      max-width: 1000px;
+      margin: 5rem auto;
+      padding: 0 2rem;
+    }
+    .section-title {
+      text-align: center;
+      font-size: 0.8rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--orange);
+      margin-bottom: 0.75rem;
+      font-family: sans-serif;
+    }
+    .section-heading {
+      text-align: center;
+      font-size: 2rem;
+      font-weight: normal;
+      margin-bottom: 3rem;
+      color: var(--dark);
+    }
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 2rem;
+    }
+    .feature-card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 2rem;
+      transition: box-shadow 0.2s;
+    }
+    .feature-card:hover { box-shadow: 0 4px 20px rgba(189,79,12,0.12); }
+    .feature-icon {
+      font-size: 2rem;
+      margin-bottom: 1rem;
+    }
+    .feature-card h3 {
+      font-size: 1.1rem;
+      margin-bottom: 0.5rem;
+      font-weight: normal;
+      color: var(--dark);
+    }
+    .feature-card p {
+      font-size: 0.95rem;
+      color: #666;
+      font-family: sans-serif;
+      line-height: 1.6;
+    }
+
+    /* ── MANUAL ── */
+    .manual {
+      background: #fff;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .manual-inner {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 5rem 2rem;
+    }
+    .manual-inner h2 {
+      font-size: 1.8rem;
+      font-weight: normal;
+      margin: 3rem 0 1rem;
+      color: var(--dark);
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid var(--orange);
+    }
+    .manual-inner h2:first-child { margin-top: 0; }
+    .manual-inner h3 {
+      font-size: 1.1rem;
+      margin: 2rem 0 0.5rem;
+      color: var(--orange-dark);
+      font-family: sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .manual-inner p {
+      margin-bottom: 1rem;
+      font-size: 1rem;
+    }
+    .manual-inner ul, .manual-inner ol {
+      margin: 0.5rem 0 1rem 1.5rem;
+    }
+    .manual-inner li {
+      margin-bottom: 0.4rem;
+      font-size: 1rem;
+    }
+    .manual-inner code {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 0.1em 0.4em;
+      font-family: "Courier New", monospace;
+      font-size: 0.9em;
+      color: var(--orange-dark);
+    }
+    .manual-inner pre {
+      background: var(--dark);
+      color: #e8e0d0;
+      border-radius: 6px;
+      padding: 1.25rem 1.5rem;
+      overflow-x: auto;
+      margin: 1rem 0 1.5rem;
+      font-family: "Courier New", monospace;
+      font-size: 0.88rem;
+      line-height: 1.6;
+    }
+    .manual-inner pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      color: inherit;
+      font-size: inherit;
+    }
+    .note {
+      background: #fff8f0;
+      border-left: 4px solid var(--orange);
+      padding: 1rem 1.25rem;
+      border-radius: 0 4px 4px 0;
+      margin: 1rem 0;
+      font-family: sans-serif;
+      font-size: 0.95rem;
+    }
+    .note strong { color: var(--orange-dark); }
+
+    /* ── INSTALL TABS ── */
+    .tab-btns {
+      display: flex;
+      gap: 0;
+      margin-bottom: 0;
+      border-bottom: 2px solid var(--border);
+    }
+    .tab-btn {
+      padding: 0.6rem 1.5rem;
+      background: none;
+      border: none;
+      font-family: sans-serif;
+      font-size: 0.9rem;
+      cursor: pointer;
+      color: #888;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: all 0.2s;
+    }
+    .tab-btn.active {
+      color: var(--orange);
+      border-bottom-color: var(--orange);
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* ── SECURITY ── */
+    .security {
+      max-width: 800px;
+      margin: 5rem auto;
+      padding: 0 2rem;
+    }
+    .security-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.5rem;
+      margin-top: 2rem;
+    }
+    .security-item {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      background: #fff;
+    }
+    .security-item h4 {
+      font-family: sans-serif;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--orange);
+      margin-bottom: 0.5rem;
+    }
+    .security-item p {
+      font-size: 0.9rem;
+      color: #666;
+      font-family: sans-serif;
+      line-height: 1.5;
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      background: var(--dark);
+      color: #666;
+      text-align: center;
+      padding: 2.5rem;
+      font-family: sans-serif;
+      font-size: 0.85rem;
+    }
+    footer a { color: var(--orange-light); text-decoration: none; }
+    footer .pilcrow-mark {
+      font-size: 2rem;
+      color: var(--orange);
+      display: block;
+      margin-bottom: 0.5rem;
+      font-family: Georgia, serif;
+    }
+
+    @media (max-width: 600px) {
+      .hero h1 { font-size: 2.5rem; }
+      .hero::before { font-size: 20rem; }
+      .nav-links { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a class="nav-logo" href="#">
+    <svg viewBox="0 0 680 680" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="340" cy="340" r="340" fill="#bd4f0c"/>
+      <g transform="translate(155,200) scale(0.58)">
+        <path d="M256 160L256 224L384 224L384 160C384 124.7 355.3 96 320 96C284.7 96 256 124.7 256 160zM192 224L192 160C192 89.3 249.3 32 320 32C390.7 32 448 89.3 448 160L448 224C483.3 224 512 252.7 512 288L512 512C512 547.3 483.3 576 448 576L192 576C156.7 576 128 547.3 128 512L128 288C128 252.7 156.7 224 192 224z" fill="#e8e0d0"/>
+      </g>
+      <g transform="translate(283,116) scale(0.18)">
+        <path d="M456.5 64C407.9 64 368.5 103.4 368.5 152L368.5 188L13.3 454.4C-.8 465-3.7 485 6.9 499.2C17.5 513.4 37.5 516.2 51.7 505.6L128.5 448L259.8 448L306.4 561.1L307.4 563.3C313.1 574 326.2 578.8 337.7 574.1C349.2 569.4 355 556.8 351.6 545.1L350.8 542.8L311.7 447.9L352.6 447.9C353.7 447.9 354.8 447.9 355.8 447.9L402.4 561.1L403.4 563.3C409.1 574 422.2 578.8 433.7 574.1C445.2 569.4 451 556.8 447.6 545.1L446.8 542.8L404.8 440.8C485.3 418.1 544.5 344 544.5 256L544.5 184L625 163.9C633.6 161.8 638.8 153.1 636.6 144.5C629.5 116 603.9 96 574.5 96L524.4 96C508.2 76.5 483.8 64 456.5 64zM456.5 128C469.8 128 480.5 138.7 480.5 152C480.5 165.3 469.8 176 456.5 176C443.2 176 432.5 165.3 432.5 152C432.5 138.7 443.2 128 456.5 128z" fill="#1a1a1a"/>
+      </g>
+    </svg>
+    <span>Pilcrow</span>
+  </a>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#install">Install</a>
+    <a href="#manual">Manual</a>
+    <a href="#security">Security</a>
+    <a href="https://github.com/stockphrase/pilcrow">GitHub</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <svg class="hero-icon" viewBox="0 0 680 680" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="340" cy="340" r="340" fill="#bd4f0c"/>
+    <g transform="translate(155,200) scale(0.58)">
+      <path d="M256 160L256 224L384 224L384 160C384 124.7 355.3 96 320 96C284.7 96 256 124.7 256 160zM192 224L192 160C192 89.3 249.3 32 320 32C390.7 32 448 89.3 448 160L448 224C483.3 224 512 252.7 512 288L512 512C512 547.3 483.3 576 448 576L192 576C156.7 576 128 547.3 128 512L128 288C128 252.7 156.7 224 192 224z" fill="#e8e0d0"/>
+    </g>
+    <g transform="translate(283,116) scale(0.18)">
+      <path d="M456.5 64C407.9 64 368.5 103.4 368.5 152L368.5 188L13.3 454.4C-.8 465-3.7 485 6.9 499.2C17.5 513.4 37.5 516.2 51.7 505.6L128.5 448L259.8 448L306.4 561.1L307.4 563.3C313.1 574 326.2 578.8 337.7 574.1C349.2 569.4 355 556.8 351.6 545.1L350.8 542.8L311.7 447.9L352.6 447.9C353.7 447.9 354.8 447.9 355.8 447.9L402.4 561.1L403.4 563.3C409.1 574 422.2 578.8 433.7 574.1C445.2 569.4 451 556.8 447.6 545.1L446.8 542.8L404.8 440.8C485.3 418.1 544.5 344 544.5 256L544.5 184L625 163.9C633.6 161.8 638.8 153.1 636.6 144.5C629.5 116 603.9 96 574.5 96L524.4 96C508.2 76.5 483.8 64 456.5 64zM456.5 128C469.8 128 480.5 138.7 480.5 152C480.5 165.3 469.8 176 456.5 176C443.2 176 432.5 165.3 432.5 152C432.5 138.7 443.2 128 456.5 128z" fill="#1a1a1a"/>
+    </g>
+  </svg>
+  <h1>Pil<span>crow</span></h1>
+  <p>A bespoke encrypted journal for Linux. Your words, locked with PGP. Only you hold the key.</p>
+  <div class="hero-btns">
+    <a href="https://github.com/stockphrase/pilcrow/releases" class="btn btn-primary">Download v0.1.0</a>
+    <a href="#manual" class="btn btn-secondary">Read the Manual</a>
+    <a href="https://github.com/stockphrase/pilcrow" class="btn btn-secondary">View on GitHub</a>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="features" id="features">
+  <p class="section-title">What it does</p>
+  <h2 class="section-heading">A journal that keeps its secrets</h2>
+  <div class="feature-grid">
+    <div class="feature-card">
+      <div class="feature-icon">🔒</div>
+      <h3>PGP Encryption</h3>
+      <p>Every entry is encrypted with your own PGP public key before it touches the disk. Only your private key can ever read it back.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">¶</div>
+      <h3>Plain Markdown</h3>
+      <p>Journals are standard <code>.md</code> files with ISO 8601 timestamps. Store them anywhere — sync, back up, or version-control freely.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔓</div>
+      <h3>Decrypt & Read</h3>
+      <p>One click decrypts your entire journal into a scrollable, searchable view. Plaintext never touches disk and is zeroed from memory on close.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔍</div>
+      <h3>Full-Text Search</h3>
+      <p>Press Ctrl+F to search your decrypted journal. All matches are highlighted with ▲/▼ navigation through results.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🦀</div>
+      <h3>Written in Rust</h3>
+      <p>Rust's deterministic memory model means sensitive plaintext is genuinely zeroed when dropped — not just dereferenced.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📂</div>
+      <h3>Multiple Journals</h3>
+      <p>Each journal is a separate file with its own PGP key. Switch between them freely — Pilcrow remembers your last opened journal.</p>
+    </div>
+  </div>
+</section>
+
+<!-- INSTALL -->
+<section class="manual" id="install">
+  <div class="manual-inner">
+    <h2>Installation</h2>
+
+    <div class="tab-btns">
+      <button class="tab-btn active" onclick="showTab('binary', this)">Pre-built Binary</button>
+      <button class="tab-btn" onclick="showTab('source', this)">Build from Source</button>
+    </div>
+
+    <div id="tab-binary" class="tab-content active">
+      <p style="margin-top:1.25rem">Download the latest release and run the installer. No Rust toolchain required.</p>
+      <pre><code>tar -xzf pilcrow-v0.1.0-linux-x86_64.tar.gz
+cd pilcrow-release
+chmod +x install.sh && ./install.sh</code></pre>
+      <p>The installer will handle all system dependencies via <code>apt</code>, install the binary to <code>/usr/local/bin/pilcrow</code>, convert the icon to all standard sizes, and register the <code>.desktop</code> entry so Pilcrow appears in your app launcher.</p>
+      <div class="note"><strong>Requirements:</strong> Linux (Debian/Ubuntu/Pop!_OS), GPG with at least one key pair, <code>libgtk-4-1</code> (installed automatically).</div>
+    </div>
+
+    <div id="tab-source" class="tab-content">
+      <p style="margin-top:1.25rem">Clone the repo and run the installer. The Rust toolchain will be installed automatically via rustup if not present.</p>
+      <pre><code>git clone https://github.com/stockphrase/pilcrow.git
+cd pilcrow
+chmod +x install.sh && ./install.sh</code></pre>
+      <div class="note"><strong>Note:</strong> The first build may take a few minutes while Cargo compiles GTK4 and other dependencies. Subsequent builds are fast.</div>
+    </div>
+
+    <h3>GPG Key</h3>
+    <p>You will need at least one GPG key pair. If you don't have one:</p>
+    <pre><code>gpg --full-generate-key</code></pre>
+    <p>Follow the prompts. Choose RSA 4096 or Ed25519 for the key type.</p>
+
+    <h3>Uninstall</h3>
+    <pre><code>./uninstall.sh</code></pre>
+    <p>Removes the binary, icons, and desktop entry. Your journal <code>.md</code> files and GPG keys are never touched.</p>
+  </div>
+</section>
+
+<!-- MANUAL -->
+<section class="manual" id="manual" style="border-top:none">
+  <div class="manual-inner">
+    <h2>User Manual</h2>
+
+    <h3>Creating a journal</h3>
+    <p>On first launch, click <strong>＋ New Journal</strong> in the top bar. A file chooser will open — choose a location and filename for your journal (the <code>.md</code> extension is added automatically). You will then be asked to select a PGP key from your keyring. This key is used to encrypt all entries in this journal.</p>
+    <div class="note"><strong>Important:</strong> Choose your key carefully. The journal is permanently bound to the key you select. You cannot re-encrypt existing entries to a different key without decrypting them first.</div>
+    <p>Pilcrow writes a short header to the file recording which key was used, so it can detect the correct key automatically next time you open the journal.</p>
+
+    <h3>Opening an existing journal</h3>
+    <p>Click <strong>📂 Open Journal</strong> and select your <code>.md</code> file. If the file contains a key ID in the header, Pilcrow selects it automatically. Otherwise you will be prompted to choose the correct key from your keyring.</p>
+
+    <h3>Writing an entry</h3>
+    <p>Type freely in the large text area on the <strong>Write</strong> tab. There is no autosave — your draft stays in the text area until you are ready. Click <strong>🔒 Encrypt &amp; Save Entry</strong> to encrypt the text and append it to the journal file.</p>
+    <p>Each entry is saved in the following format:</p>
+    <pre><code># 2026-04-09T14:32
+
+-----BEGIN PGP MESSAGE-----
+
+hQIMA7x2Kp9fT1QBAQ...
+-----END PGP MESSAGE-----</code></pre>
+    <p>The timestamp is in ISO 8601 format. The text area is cleared after a successful save.</p>
+
+    <h3>Reading your journal</h3>
+    <p>Click the <strong>🔓 Decrypt Journal</strong> tab and then <strong>Decrypt All Entries</strong>. GPG will prompt for your private key passphrase via your system's pinentry agent. After you enter it once, the agent caches it and all remaining entries decrypt silently.</p>
+    <p>The decrypted journal is displayed in a scrollable, read-only view. Each entry is separated by a horizontal rule. The plaintext is held entirely in memory — it is never written to disk.</p>
+    <div class="note"><strong>Privacy:</strong> Closing the app or clicking <strong>Clear</strong> wipes the decrypted text from memory and clears the GPG agent's passphrase cache.</div>
+
+    <h3>Searching</h3>
+    <p>With the Decrypt Journal tab open and entries decrypted, press <strong>Ctrl+F</strong> to open the search bar. Type any keyword — all matches are highlighted in amber as you type. Use the <strong>▲</strong> and <strong>▼</strong> buttons to step through matches. The counter shows your position (e.g. <code>3 / 12</code>). Press Ctrl+F again or click the close button on the search bar to dismiss it.</p>
+    <p>Search is case-insensitive.</p>
+
+    <h3>Multiple journals</h3>
+    <p>Pilcrow supports any number of journal files. Each is a plain <code>.md</code> file encrypted to its own key. Use <strong>＋ New Journal</strong> to create additional journals, and <strong>📂 Open Journal</strong> to switch between them. Pilcrow remembers the last journal you had open and restores it on next launch.</p>
+
+    <h2>Journal file format</h2>
+    <p>Journal files are standard Markdown and can be opened in any text editor. The file begins with a short header:</p>
+    <pre><code># Pilcrow Journal
+
+_Encrypted with PGP key `A1B2C3D4E5F6A7B8` (Alice &lt;alice@example.com&gt;)_</code></pre>
+    <p>Each entry follows:</p>
+    <pre><code># 2026-04-09T14:32
+
+-----BEGIN PGP MESSAGE-----
+
+hQIMA7x2Kp9fT1QBAQ//Wd2mX8nLzP4oJkT9VqRs...
+-----END PGP MESSAGE-----</code></pre>
+    <p>The ciphertext blocks are self-contained ASCII-armored PGP messages. You can decrypt any individual entry directly with GPG from the terminal:</p>
+    <pre><code>gpg --decrypt entry.asc</code></pre>
+    <p>This means your journal is never locked to Pilcrow — any GPG-capable tool can read it.</p>
+
+    <h2>GPG &amp; Passphrase caching</h2>
+    <p>Pilcrow delegates all cryptographic operations to your system's GPG installation. Passphrase prompts are handled by your system's pinentry agent — Pilcrow never sees your passphrase.</p>
+    <p>By default, <code>gpg-agent</code> caches your passphrase for 10 minutes. To reduce this window, add the following to <code>~/.gnupg/gpg-agent.conf</code>:</p>
+    <pre><code>default-cache-ttl 60
+max-cache-ttl 120</code></pre>
+    <p>Then reload the agent:</p>
+    <pre><code>gpg-connect-agent reloadagent /bye</code></pre>
+    <p>Pilcrow also sends a <code>reloadagent</code> command when the app closes, clearing the cache immediately regardless of the TTL setting.</p>
+
+    <h2>Keyboard shortcuts</h2>
+    <table style="width:100%;border-collapse:collapse;font-family:sans-serif;font-size:0.95rem;margin-top:0.5rem">
+      <tr style="border-bottom:2px solid var(--border)">
+        <th style="text-align:left;padding:0.5rem 1rem 0.5rem 0;color:var(--orange-dark)">Shortcut</th>
+        <th style="text-align:left;padding:0.5rem 0;color:var(--orange-dark)">Action</th>
+      </tr>
+      <tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:0.5rem 1rem 0.5rem 0"><code>Ctrl+F</code></td>
+        <td style="padding:0.5rem 0">Open / close search bar in Decrypt Journal tab</td>
+      </tr>
+      <tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:0.5rem 1rem 0.5rem 0"><code>Ctrl+Z</code></td>
+        <td style="padding:0.5rem 0">Undo in the Write tab</td>
+      </tr>
+    </table>
+  </div>
+</section>
+
+<!-- SECURITY -->
+<section class="security" id="security">
+  <p class="section-title">Under the hood</p>
+  <h2 class="section-heading" style="text-align:center;font-size:2rem;font-weight:normal;margin-bottom:0.5rem">Security model</h2>
+  <p style="text-align:center;color:#666;font-family:sans-serif;font-size:0.95rem;max-width:560px;margin:0 auto 0.5rem">Pilcrow is designed to minimise the time sensitive data spends in memory and never write it to disk.</p>
+  <div class="security-grid">
+    <div class="security-item">
+      <h4>No custom crypto</h4>
+      <p>All encryption and decryption is delegated to your system GPG installation. Pilcrow never implements cryptographic primitives.</p>
+    </div>
+    <div class="security-item">
+      <h4>Zeroized memory</h4>
+      <p>Decrypted plaintext is wrapped in Rust's <code>Zeroizing&lt;String&gt;</code> — memory is overwritten with zeros when the value is dropped.</p>
+    </div>
+    <div class="security-item">
+      <h4>No disk writes</h4>
+      <p>Decrypted text is never written to disk, swap, or any temporary file. It exists only in process memory for the duration of the session.</p>
+    </div>
+    <div class="security-item">
+      <h4>Agent cache cleared</h4>
+      <p>On close, Pilcrow sends <code>reloadagent</code> to GPG, clearing any cached passphrases from the agent immediately.</p>
+    </div>
+    <div class="security-item">
+      <h4>Passphrase isolation</h4>
+      <p>Your private key passphrase is handled entirely by the system pinentry agent. Pilcrow has no access to it at any point.</p>
+    </div>
+    <div class="security-item">
+      <h4>Open format</h4>
+      <p>Journal files are standard ASCII-armored PGP. You are never locked in — any GPG-capable tool can decrypt your entries independently.</p>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <span class="pilcrow-mark">¶</span>
+  <p>Pilcrow is free and open source software released under the <a href="https://github.com/stockphrase/pilcrow/blob/main/LICENSE">MIT License</a>.</p>
+  <p style="margin-top:0.5rem"><a href="https://github.com/stockphrase/pilcrow">github.com/stockphrase/pilcrow</a></p>
+</footer>
+
+<script>
+  function showTab(id, btn) {
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + id).classList.add('active');
+    btn.classList.add('active');
+  }
+</script>
+
+</body>
+</html>
